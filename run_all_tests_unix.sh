@@ -9,11 +9,12 @@ test_files="$(grep ^[^#] test_classes_list.txt)"
 tty -s && tput bold
 
 # 2.1 Check for python interpreter version
-if [ -x "$(command -v python2)" ]; then
-    interpreter="python"
+if [[ -v PYTHON_VERSION ]]; then
+    interpreter=PYTHON_VERSION
+elif [[ -x "$(command -v python3)" ]]; then
+    interpreter=python3
 else
-    echo "No python2 command found! Will use the default python command."
-    interpreter="python"
+    interpreter=python
 fi
 
 echo -n "Starting IPv8 testsuite: "
