@@ -10,7 +10,7 @@ tty -s && tput bold
 
 # 2.1 Check for python interpreter version
 if [ -x "$(command -v python2)" ]; then
-    interpreter="python2"
+    interpreter="python"
 else
     echo "No python2 command found! Will use the default python command."
     interpreter="python"

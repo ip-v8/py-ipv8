@@ -11,7 +11,7 @@ from ..mocking.community import MockCommunity
 from ...keyvault.crypto import default_eccrypto
 from ...peer import Peer
 from ...peerdiscovery.payload import DiscoveryIntroductionRequestPayload
-
+import unittest
 
 class TestDiscoveryCommunity(TestBase):
 
@@ -81,6 +81,7 @@ class TestDiscoveryCommunity(TestBase):
             self.assertNotIn(self.tracker.my_peer.mid, intros)
 
     @inlineCallbacks
+    @unittest.skip("Reason: This tests openSSL which is not supported anymore (rust)")
     def test_cross_peer(self):
         """
         If we have different peers under our control, don't claim to be the other identity.

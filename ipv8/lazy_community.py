@@ -2,12 +2,14 @@ from __future__ import absolute_import
 
 from functools import wraps
 
+from ipv8.keyvault.private.libnaclkey import LibNaCLSK
 from .messaging.payload_headers import BinMemberAuthenticationPayload, GlobalTimeDistributionPayload
 from .keyvault.crypto import default_eccrypto
 from .overlay import Overlay
 from .peer import Peer
 from .util import cast_to_bin
 
+from rust_ipv8_in_python import borrowed_bundler
 
 def lazy_wrapper(*payloads):
     """
@@ -32,7 +34,7 @@ def lazy_wrapper(*payloads):
             # UNPACK
             auth, remainder = self.serializer.unpack_to_serializables([BinMemberAuthenticationPayload, ], data[23:])
             signature_valid, remainder = self._verify_signature(auth, data)
-            unpacked = self.serializer.ez_unpack_serializables(payloads, remainder[23:])
+            unpacked = self.serializer.ez_unpack_serializables(payloads, remainder)
             # ASSERT
             if not signature_valid:
                 raise PacketDecodingError("Incoming packet %s has an invalid signature" %
@@ -67,7 +69,7 @@ def lazy_wrapper_wd(*payloads):
             # UNPACK
             auth, remainder = self.serializer.unpack_to_serializables([BinMemberAuthenticationPayload, ], data[23:])
             signature_valid, remainder = self._verify_signature(auth, data)
-            unpacked = self.serializer.ez_unpack_serializables(payloads, remainder[23:])
+            unpacked = self.serializer.ez_unpack_serializables(payloads, remainder)
             # ASSERT
             if not signature_valid:
                 raise PacketDecodingError("Incoming packet %s has an invalid signature" %
@@ -167,14 +169,30 @@ class EZPackOverlay(Overlay):
         for format_list in format_list_list:
             packet += self.serializer.pack_multiple(format_list)[0]
         if sig:
-            packet += default_eccrypto.create_signature(self.my_peer.key, packet)
+            if type(self.my_peer.key) == LibNaCLSK:
+                key = self.my_peer.key.veri.vk
+                seed = self.my_peer.key.key.seed
+
+                packet = borrowed_bundler.borrowed_create_signature(seed, key, packet)
+            else:
+                packet += default_eccrypto.create_signature(self.my_peer.key, packet)
+
         return packet
 
     def _verify_signature(self, auth, data):
+        # rust verifies ed25519 signatures
+        if auth.public_key_bin.startswith(b"LibNaCLPK:"):
+            return borrowed_bundler.borrowed_verify_signature(auth.public_key_bin, data)
+
+        # fallback: python verification kept as rust
+        # deprecates openssl verification so this is kept slow.
         ec = default_eccrypto
         public_key = ec.key_from_public_bin(auth.public_key_bin)
         signature_length = ec.get_signature_length(public_key)
-        remainder = data[2 + len(auth.public_key_bin):-signature_length]
+        # remove header + binmemberauth and signature
+        # 23 + 2(len) + x bytes of public key and stop n bytes before the end where
+        # n is signature length
+        remainder = data[23 + 2 + len(auth.public_key_bin):-signature_length]
         signature = data[-signature_length:]
         return ec.is_valid_signature(public_key, data[:-signature_length], signature), remainder
 
@@ -183,7 +201,7 @@ class EZPackOverlay(Overlay):
         auth, remainder = self.serializer.unpack_to_serializables([BinMemberAuthenticationPayload, ], data[23:])
         signature_valid, remainder = self._verify_signature(auth, data)
         format = [GlobalTimeDistributionPayload, payload_class]
-        dist, payload = self.serializer.ez_unpack_serializables(format, remainder[23:])
+        dist, payload = self.serializer.ez_unpack_serializables(format, remainder)
         # ASSERT
         if not signature_valid:
             raise PacketDecodingError("Incoming packet %s has an invalid signature" % payload_class.__name__)
